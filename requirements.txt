@@ -1,6 +1,6 @@
 streamlit
 pandas
-opencv-python
+opencv-python  # veya opencv-python-headless
 Pillow  # Kütüphane 'PIL' için kullanılır
 numpy
 requests
