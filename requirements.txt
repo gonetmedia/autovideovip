@@ -1,16 +1,6 @@
 streamlit
-os
-pandas as pd
-PIL import Image, ImageDraw, ImageFont
-cv2
-numpy as np
-subprocess
-tempfile
-zipfile
-pathlib import Path
-platform
+pandas
+opencv-python
+Pillow  # Kütüphane 'PIL' için kullanılır
+numpy
 requests
-urllib.parse import urlparse
-logging
-hashlib
-sqlite3
