@@ -1,4 +1,4 @@
-streamlit as st
+streamlit
 os
 pandas as pd
 PIL import Image, ImageDraw, ImageFont
