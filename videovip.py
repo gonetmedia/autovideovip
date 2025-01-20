@@ -238,6 +238,7 @@ def process_video(title, description, input_video_path, output_video_path, logo_
     if logo_path:
         try:
             logo = cv2.imread(str(logo_path), cv2.IMREAD_UNCHANGED)
+            logo = cv2.cvtColor(logo, cv2.COLOR_BGRA2BGR)  # Alpha kanalını çıkarıyoruz
             logo = cv2.resize(logo, (LOGO_WIDTH, LOGO_HEIGHT), interpolation=cv2.INTER_AREA)
         except Exception as e:
             st.warning(f"Logo yüklenirken hata oluştu: {e}")
