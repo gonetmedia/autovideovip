@@ -333,6 +333,74 @@ def process_videos_from_csv(df, temp_dir, output_zip_path, **kwargs):
             st.error(f"Video işleme hatası: {str(e)}")
             continue
 
+# --- Font Yönetimi Fonksiyonları ---
+
+def find_system_font():
+    system_font_paths = {
+        'Windows': [
+            'C:/Windows/Fonts',
+            str(Path.home() / "AppData/Local/Microsoft/Windows/Fonts")
+        ],
+        'Darwin': [
+            '/System/Library/Fonts',
+            '/Library/Fonts',
+            str(Path.home() / "Library/Fonts")
+        ],
+        'Linux': [
+            '/usr/share/fonts',
+            '/usr/local/share/fonts',
+            str(Path.home() / ".local/share/fonts")
+        ]
+    }
+
+    system = platform.system()
+    if system in system_font_paths:
+        for font_dir in system_font_paths[system]:
+            if os.path.exists(font_dir):
+                for root, _, files in os.walk(font_dir):
+                    if 'arial.ttf' in [f.lower() for f in files]:
+                        return os.path.join(root, 'arial.ttf')
+    return None
+
+def validate_font(font_path):
+    try:
+        ImageFont.truetype(font_path, 40)
+        return True
+    except Exception:
+        return False
+
+def setup_font():
+    uploaded_font = st.sidebar.file_uploader("Font Yükle (TTF/OTF)", type=["ttf", "otf"])
+
+    if uploaded_font:
+        try:
+            temp_font = tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_font.name).suffix)
+            temp_font.write(uploaded_font.getvalue())
+            temp_font.close()
+
+            if validate_font(temp_font.name):
+                st.sidebar.success("Font başarıyla yüklendi!")
+                return temp_font.name
+            else:
+                os.unlink(temp_font.name)
+                st.sidebar.error("Geçersiz font dosyası!")
+        except Exception as e:
+            st.sidebar.error(f"Font yükleme hatası: {str(e)}")
+
+    default_font = find_system_font()
+    if default_font:
+        st.sidebar.info("Varsayılan sistem fontu (Arial) kullanılıyor")
+        return default_font
+
+    try:
+        from PIL import ImageFont
+        default_font = ImageFont.load_default()
+        st.sidebar.info("PIL varsayılan fontu kullanılıyor")
+        return default_font
+    except Exception as e:
+        st.sidebar.error(f"Varsayılan font yüklenemedi: {str(e)}")
+        return None
+
 # --- Streamlit Uygulaması ---
 
 # Logging ayarları
