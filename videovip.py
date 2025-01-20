@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import logging
 import hashlib
 import sqlite3
+from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip
 
 # --- Kullanıcı Yetkilendirme ---
 
@@ -75,7 +76,7 @@ def show_login_form():
                 # Oturum açma durumunu sakla
                 st.session_state["logged_in"] = True
                 st.session_state["username"] = username
-                st.session_state["is_admin"] = (username.lower() == "admin")  # Kullanıcının admin olup olmadığını kontrol et
+                st.session_state["is_admin"] = (username.lower() == "admin")
                 st.success("Giriş başarılı!")
             else:
                 st.warning("Hesabınız henüz admin tarafından onaylanmadı.")
@@ -84,7 +85,6 @@ def show_login_form():
 
 def show_logout_button():
     if st.button("Çıkış Yap"):
-        # Kullanıcının oturumunu sonlandır
         st.session_state.clear()  # Tüm oturum durumunu temizle
         st.success("Çıkış yapıldı!")
 
@@ -238,7 +238,8 @@ def process_video(title, description, input_video_path, output_video_path, logo_
     if logo_path:
         try:
             logo = cv2.imread(str(logo_path), cv2.IMREAD_UNCHANGED)
-            logo = cv2.cvtColor(logo, cv2.COLOR_BGRA2BGR)  # Alpha kanalını çıkarıyoruz
+            if logo is not None and logo.shape[2] == 4:  # Eğer logo alpha kanalına sahipse
+                logo = cv2.cvtColor(logo, cv2.COLOR_BGRA2BGR)  # 4 kanallı RGBA'dan 3 kanallı RGB'ye dönüşüm
             logo = cv2.resize(logo, (LOGO_WIDTH, LOGO_HEIGHT), interpolation=cv2.INTER_AREA)
         except Exception as e:
             st.warning(f"Logo yüklenirken hata oluştu: {e}")
@@ -276,13 +277,23 @@ def process_video(title, description, input_video_path, output_video_path, logo_
         if logo is not None:
             logo_x = (VIDEO_WIDTH_9_16 - LOGO_WIDTH) // 2
             logo_y = LOGO_TOP_MARGIN
-            output_frame[logo_y:logo_y + LOGO_HEIGHT, logo_x:logo_x + LOGO_WIDTH] = logo
+            
+            # Logo'yu ekle
+            background = output_frame[logo_y:logo_y + LOGO_HEIGHT, logo_x:logo_x + LOGO_WIDTH]
+            output_frame[logo_y:logo_y + LOGO_HEIGHT, logo_x:logo_x + LOGO_WIDTH] = np.where(logo == 0, background, logo)  # Alpha değerine göre birleştir
 
         out.write(output_frame)
         frame_count += 1
 
     cap.release()
     out.release()
+
+    # Video ve ses dosyalarını birleştir
+    video_clip = VideoFileClip(output_video_path)
+    audio = VideoFileClip(input_video_path).audio  # Orijinal videodan sesi al
+    video_clip = video_clip.set_audio(audio)
+
+    video_clip.write_videofile(output_video_path, codec='libx264', audio_codec='aac')  # MP4 formatında kaydet
 
 def process_videos_from_csv(df, temp_dir, output_zip_path, **kwargs):
     for index, row in df.iterrows():
@@ -444,10 +455,9 @@ def main():
     else:
         show_logout_button()
 
-        if st.session_state["username"].lower() == "admin":
+        if st.session_state.get("username", "").lower() == "admin":
             show_admin_panel()
         else:
-            # Normal kullanıcı işlemleri
             uploaded_csv = st.sidebar.file_uploader("CSV Dosyası Yükle", type=["csv"])
             uploaded_logo = st.sidebar.file_uploader("Logo Yükle (PNG)", type=["png"])
 
