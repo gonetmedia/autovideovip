@@ -4,7 +4,6 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 import cv2
 import numpy as np
-import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
@@ -170,72 +169,6 @@ def is_url(path):
     except:
         return False
 
-def find_system_font():
-    system_font_paths = {
-        'Windows': [
-            'C:/Windows/Fonts',
-            str(Path.home() / "AppData/Local/Microsoft/Windows/Fonts")
-        ],
-        'Darwin': [
-            '/System/Library/Fonts',
-            '/Library/Fonts',
-            str(Path.home() / "Library/Fonts")
-        ],
-        'Linux': [
-            '/usr/share/fonts',
-            '/usr/local/share/fonts',
-            str(Path.home() / ".local/share/fonts")
-        ]
-    }
-
-    system = platform.system()
-    if system in system_font_paths:
-        for font_dir in system_font_paths[system]:
-            if os.path.exists(font_dir):
-                for root, _, files in os.walk(font_dir):
-                    if 'arial.ttf' in [f.lower() for f in files]:
-                        return os.path.join(root, 'arial.ttf')
-    return None
-
-def validate_font(font_path):
-    try:
-        ImageFont.truetype(font_path, 40)
-        return True
-    except Exception:
-        return False
-
-def setup_font():
-    uploaded_font = st.sidebar.file_uploader("Font Yükle (TTF/OTF)", type=["ttf", "otf"])
-
-    if uploaded_font:
-        try:
-            temp_font = tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_font.name).suffix)
-            temp_font.write(uploaded_font.getvalue())
-            temp_font.close()
-
-            if validate_font(temp_font.name):
-                st.sidebar.success("Font başarıyla yüklendi!")
-                return temp_font.name
-            else:
-                os.unlink(temp_font.name)
-                st.sidebar.error("Geçersiz font dosyası!")
-        except Exception as e:
-            st.sidebar.error(f"Font yükleme hatası: {str(e)}")
-
-    default_font = find_system_font()
-    if default_font:
-        st.sidebar.info("Varsayılan sistem fontu (Arial) kullanılıyor")
-        return default_font
-
-    try:
-        from PIL import ImageFont
-        default_font = ImageFont.load_default()
-        st.sidebar.info("PIL varsayılan fontu kullanılıyor")
-        return default_font
-    except Exception as e:
-        st.sidebar.error(f"Varsayılan font yüklenemedi: {str(e)}")
-        return None
-
 def hex_to_bgr(hex_color):
     hex_color = hex_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
@@ -289,7 +222,7 @@ def draw_text_with_pillow(frame, text, x, y, font_size, font_path, text_color, b
 
     return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
-def process_video(title, description, input_video_path, output_video_path, temp_video_path, logo_path, font_path, title_font_size, desc_font_size, text_color, box_color, bar_color, top_bar_height, bottom_bar_height):
+def process_video(title, description, input_video_path, output_video_path, logo_path, font_path, title_font_size, desc_font_size, text_color, box_color, top_bar_height, bottom_bar_height):
     global VIDEO_WIDTH_9_16, VIDEO_HEIGHT_9_16, FPS, TITLE_DISPLAY_TIME, GAP_DURATION
     global TEXT_MARGIN_X, TEXT_POSITION_Y, LINE_SPACING, LOGO_WIDTH, LOGO_HEIGHT, LOGO_TOP_MARGIN
 
@@ -298,11 +231,8 @@ def process_video(title, description, input_video_path, output_video_path, temp_
         st.error(f"Video açılamadı: {input_video_path}")
         return
 
-    cap_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    cap_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(temp_video_path, fourcc, FPS, (VIDEO_WIDTH_9_16, VIDEO_HEIGHT_9_16))
+    out = cv2.VideoWriter(output_video_path, fourcc, FPS, (VIDEO_WIDTH_9_16, VIDEO_HEIGHT_9_16))
 
     logo = None
     if logo_path:
@@ -313,16 +243,14 @@ def process_video(title, description, input_video_path, output_video_path, temp_
             st.warning(f"Logo yüklenirken hata oluştu: {e}")
 
     frame_count = 0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    progress_bar = st.progress(0)
-
-    while frame_count < total_frames:
+    while True:
         ret, frame = cap.read()
         if not ret:
             break
 
         output_frame = np.full((VIDEO_HEIGHT_9_16, VIDEO_WIDTH_9_16, 3), hex_to_bgr(BACKGROUND_COLOR), dtype=np.uint8)
 
+        cap_height, cap_width = frame.shape[:2]
         if cap_width / cap_height > VIDEO_WIDTH_9_16 / VIDEO_HEIGHT_9_16:
             new_width = VIDEO_WIDTH_9_16
             new_height = int(new_width * (cap_height / cap_width))
@@ -341,44 +269,19 @@ def process_video(title, description, input_video_path, output_video_path, temp_
         elif FPS * (TITLE_DISPLAY_TIME + GAP_DURATION) <= frame_count:
             output_frame = draw_text_with_pillow(output_frame, description, TEXT_MARGIN_X, TEXT_POSITION_Y, desc_font_size, font_path, text_color, box_color)
 
-        output_frame[:top_bar_height, :] = bar_color
-        output_frame[-bottom_bar_height:, :] = bar_color
+        output_frame[:top_bar_height, :] = hex_to_bgr(BAR_COLOR)
+        output_frame[-bottom_bar_height:, :] = hex_to_bgr(BAR_COLOR)
 
         if logo is not None:
             logo_x = (VIDEO_WIDTH_9_16 - LOGO_WIDTH) // 2
             logo_y = LOGO_TOP_MARGIN
-            
-            if logo.shape[2] == 4:  # Logo transparan ise
-                alpha_s = logo[:, :, 3] / 255.0
-                alpha_l = 1.0 - alpha_s
-                
-                for c in range(0, 3):
-                    output_frame[logo_y:logo_y + LOGO_HEIGHT, logo_x:logo_x + LOGO_WIDTH, c] = (
-                        alpha_s * logo[:, :, c] + 
-                        alpha_l * output_frame[logo_y:logo_y + LOGO_HEIGHT, 
-                                            logo_x:logo_x + LOGO_WIDTH, c]
-                    )
+            output_frame[logo_y:logo_y + LOGO_HEIGHT, logo_x:logo_x + LOGO_WIDTH] = logo
 
         out.write(output_frame)
         frame_count += 1
-        progress_bar.progress(frame_count / total_frames)
 
     cap.release()
     out.release()
-
-    command = [
-        "ffmpeg",
-        "-y",
-        "-i", temp_video_path,
-        "-i", input_video_path,
-        "-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0",
-        output_video_path
-    ]
-
-    try:
-        subprocess.run(command, check=True, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        st.error(f"FFmpeg hatası: {e.stderr.decode()}")
 
 def process_videos_from_csv(df, temp_dir, output_zip_path, **kwargs):
     for index, row in df.iterrows():
@@ -399,7 +302,6 @@ def process_videos_from_csv(df, temp_dir, output_zip_path, **kwargs):
             st.error(f"Yerel video bulunamadı: {input_video_path}")
             continue
 
-        temp_video_path = os.path.join(temp_dir, f"temp_process_{index + 1}.mp4")
         output_video_path = os.path.join(temp_dir, f"output_video_{index + 1}.mp4")
 
         try:
@@ -408,8 +310,14 @@ def process_videos_from_csv(df, temp_dir, output_zip_path, **kwargs):
                 description=description,
                 input_video_path=input_video_path,
                 output_video_path=output_video_path,
-                temp_video_path=temp_video_path,
-                **kwargs
+                logo_path=kwargs.get("logo_path"),
+                font_path=kwargs.get("font_path"),
+                title_font_size=kwargs.get("title_font_size"),
+                desc_font_size=kwargs.get("desc_font_size"),
+                text_color=kwargs.get("text_color"),
+                box_color=kwargs.get("box_color"),
+                top_bar_height=kwargs.get("top_bar_height"),
+                bottom_bar_height=kwargs.get("bottom_bar_height"),
             )
 
             if not os.path.exists(output_video_path):
@@ -439,7 +347,7 @@ def main():
 
     global VIDEO_WIDTH_9_16, VIDEO_HEIGHT_9_16, FPS, TITLE_DISPLAY_TIME, GAP_DURATION
     global TEXT_MARGIN_X, TEXT_POSITION_Y, LINE_SPACING, LOGO_WIDTH, LOGO_HEIGHT, LOGO_TOP_MARGIN
-    global BACKGROUND_COLOR
+    global BACKGROUND_COLOR, BAR_COLOR
 
     VIDEO_WIDTH_9_16 = 1080
     VIDEO_HEIGHT_9_16 = 1920
@@ -494,7 +402,7 @@ def main():
             BACKGROUND_COLOR = st.sidebar.color_picker("Arka Plan Rengi", "#00345B")
             text_color_hex = st.sidebar.color_picker("Yazı Rengi", "#FFFFFF")
             box_color_hex = st.sidebar.color_picker("Metin Kutusu Rengi", "#A3D4F7")
-            bar_color_hex = st.sidebar.color_picker("Çubuk Rengi", "#194E8A")
+            BAR_COLOR = st.sidebar.color_picker("Çubuk Rengi", "#194E8A")
 
             st.sidebar.subheader("Çubuk Ayarları")
             col1, col2 = st.sidebar.columns(2)
@@ -519,7 +427,6 @@ def main():
                                 desc_font_size=desc_font_size,
                                 text_color=hex_to_bgr(text_color_hex),
                                 box_color=hex_to_bgr(box_color_hex),
-                                bar_color=hex_to_bgr(bar_color_hex),
                                 top_bar_height=top_bar_height,
                                 bottom_bar_height=bottom_bar_height
                             )
